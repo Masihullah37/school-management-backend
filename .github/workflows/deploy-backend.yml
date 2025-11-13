@@ -1,0 +1,46 @@
+name: Deploy Backend to Hostinger
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        tools: composer:v2
+    
+    - name: Install Composer dependencies
+      run: composer install --no-dev --optimize-autoloader --no-interaction
+    
+    - name: Deploy to Hostinger
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.HOSTINGER_SSH_HOST }}
+        username: ${{ secrets.HOSTINGER_SSH_USER }}
+        key: ${{ secrets.HOSTINGER_SSH_KEY }}
+        port: ${{ secrets.HOSTINGER_SSH_PORT }}
+        source: ".,!.git,!.github,!node_modules,!tests,!.env"
+        target: "/home/${{ secrets.HOSTINGER_SSH_USER }}/backend/"
+    
+    - name: Run Laravel commands
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOSTINGER_SSH_HOST }}
+        username: ${{ secrets.HOSTINGER_SSH_USER }}
+        key: ${{ secrets.HOSTINGER_SSH_KEY }}
+        port: ${{ secrets.HOSTINGER_SSH_PORT }}
+        script: |
+          cd /home/${{ secrets.HOSTINGER_SSH_USER }}/backend/
+          chmod -R 755 storage bootstrap/cache
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
