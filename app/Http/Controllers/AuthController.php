@@ -104,26 +104,10 @@ class AuthController extends Controller
             'user' => $user,
         ], 201);
     }
-
+    
     /**
      * Déconnexion de l'utilisateur
      */
-    // public function logout(Request $request)
-    // {
-    //     Auth::guard('web')->logout();
-    //     $request->session()->invalidate();
-    //     $request->session()->regenerateToken();
-
-    //      // Clear the session cookie by setting it to expire
-    //     // Cookie::queue(Cookie::forget('school_management_session'));
-    //     // Cookie::queue(Cookie::forget('XSRF-TOKEN'));
-
-    //     return response()->json([
-    //         'message' => 'Déconnexion réussie'
-    //     ])->withHeaders([
-    //     'Clear-Site-Data' => '"cookies", "storage"'
-    // ]);
-    // }
 
     public function logout(Request $request)
 {

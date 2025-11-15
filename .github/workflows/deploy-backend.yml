@@ -1,37 +1,121 @@
-name: Deploy Backend to Hostinger
+# ============================================================================
+# Workflow: Construction et Déploiement du Backend Laravel
+# Description: Installe les dépendances PHP et déploie l'API Laravel
+# Déclencheur: Push sur la branche main
+# ============================================================================
+name: Build and Deploy Backend
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]        # Déclenché automatiquement lors du push sur main
+  workflow_dispatch:          # Permet également le déclenchement manuel
 
+# ============================================================================
+# JOBS: Deux étapes distinctes - Build puis Deploy
+# ============================================================================
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  
+  # ==========================================================================
+  # ÉTAPE 1: BUILD - Construction de l'application Laravel
+  # Objectif: Installer les dépendances PHP et préparer l'application
+  # ==========================================================================
+  build:
+    name: 🔨 Construction du Backend
+    runs-on: ubuntu-latest    # Utilise une machine virtuelle Ubuntu
     
     steps:
-    - name: Checkout code
+    # ------------------------------------------------------------------------
+    # Récupération du code source depuis le dépôt GitHub
+    # ------------------------------------------------------------------------
+    - name: 📥 Récupération du code source
       uses: actions/checkout@v3
     
-    - name: Setup PHP
+    # ------------------------------------------------------------------------
+    # Installation et configuration de PHP 8.2
+    # Installe également les extensions PHP nécessaires pour Laravel
+    # ------------------------------------------------------------------------
+    - name: ⚙️ Configuration de PHP 8.2
       uses: shivammathur/setup-php@v2
       with:
-        php-version: '8.2'
-        tools: composer:v2
+        php-version: '8.2'                    # Version PHP requise par Laravel 11
+        extensions: mbstring, xml, bcmath     # Extensions PHP nécessaires
+        tools: composer:v2                    # Gestionnaire de dépendances PHP
     
-    - name: Install Composer dependencies
-      run: composer install --no-dev --optimize-autoloader --no-interaction
+    # ------------------------------------------------------------------------
+    # Validation du fichier composer.json
+    # Vérifie que les dépendances sont correctement définies
+    # Détecte les erreurs de syntaxe ou de structure avant le build
+    # ------------------------------------------------------------------------
+    - name: ✅ Validation de composer.json
+      run: composer validate --strict
     
-    - name: Deploy to Hostinger
+    # ------------------------------------------------------------------------
+    # Installation des dépendances PHP via Composer
+    # --no-dev: Exclut les dépendances de développement (tests, debug)
+    # --optimize-autoloader: Optimise le chargement automatique des classes
+    # --no-interaction: Mode non-interactif (pas de questions)
+    # --prefer-dist: Télécharge les archives au lieu de cloner les repos Git
+    # ------------------------------------------------------------------------
+    - name: 📦 Installation des dépendances Composer
+      run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+    
+    # ------------------------------------------------------------------------
+    # Sauvegarde des fichiers pour l'étape de déploiement
+    # Permet de transférer le code et les dépendances entre jobs
+    # Conservé pendant 1 jour (suffisant pour le déploiement)
+    # ------------------------------------------------------------------------
+    - name: 📤 Sauvegarde de l'artefact de build
+      uses: actions/upload-artifact@v3
+      with:
+        name: backend-build    # Nom de l'artefact
+        path: |                # Fichiers à sauvegarder
+          .
+          !.git                # Exclut le dossier .git
+          !.github             # Exclut le dossier .github
+          !node_modules        # Exclut node_modules (si présent)
+          !tests               # Exclut les tests
+          !.env                # Exclut .env (sécurité)
+        retention-days: 1      # Durée de conservation (1 jour)
+
+  # ==========================================================================
+  # ÉTAPE 2: DEPLOY - Déploiement sur le serveur Hostinger
+  # Objectif: Transférer les fichiers et configurer Laravel en production
+  # ==========================================================================
+  deploy:
+    name: 🚀 Déploiement sur Hostinger
+    runs-on: ubuntu-latest
+    needs: build              # Attend la fin du job "build" avant de commencer
+    
+    
+    steps:
+    # ------------------------------------------------------------------------
+    # Récupération de l'artefact créé lors de l'étape de build
+    # ------------------------------------------------------------------------
+    - name: 📥 Téléchargement de l'artefact de build
+      uses: actions/download-artifact@v3
+      with:
+        name: backend-build    # Nom de l'artefact à télécharger
+    
+    # ------------------------------------------------------------------------
+    # Transfert des fichiers vers Hostinger via SCP (Secure Copy Protocol)
+    # Utilise les secrets GitHub pour l'authentification SSH sécurisée
+    # Exclut les fichiers sensibles (.env) et inutiles (.git, tests)
+    # ------------------------------------------------------------------------
+    - name: 📤 Transfert des fichiers vers Hostinger
       uses: appleboy/scp-action@master
       with:
-        host: ${{ secrets.HOSTINGER_SSH_HOST }}
-        username: ${{ secrets.HOSTINGER_SSH_USER }}
-        key: ${{ secrets.HOSTINGER_SSH_KEY }}
-        port: ${{ secrets.HOSTINGER_SSH_PORT }}
-        source: ".,!.git,!.github,!node_modules,!tests,!.env"
-        target: "/home/${{ secrets.HOSTINGER_SSH_USER }}/backend/"
+        host: ${{ secrets.HOSTINGER_SSH_HOST }}        # Adresse IP du serveur
+        username: ${{ secrets.HOSTINGER_SSH_USER }}    # Nom d'utilisateur SSH
+        key: ${{ secrets.HOSTINGER_SSH_KEY }}          # Clé privée SSH
+        port: ${{ secrets.HOSTINGER_SSH_PORT }}        # Port SSH (65002)
+        source: ".,!.git,!.github,!node_modules,!tests,!.env"  # Fichiers à copier
+        target: "/home/${{ secrets.HOSTINGER_SSH_USER }}/backend/"  # Destination
     
-    - name: Run Laravel commands
+    # ------------------------------------------------------------------------
+    # Configuration de Laravel en production via SSH
+    # Exécute des commandes directement sur le serveur Hostinger
+    # ------------------------------------------------------------------------
+    - name: ⚙️ Configuration de Laravel en production
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.HOSTINGER_SSH_HOST }}
@@ -39,8 +123,48 @@ jobs:
         key: ${{ secrets.HOSTINGER_SSH_KEY }}
         port: ${{ secrets.HOSTINGER_SSH_PORT }}
         script: |
+          # Navigation vers le dossier backend
           cd /home/${{ secrets.HOSTINGER_SSH_USER }}/backend/
+          
+          # ----------------------------------------------------------------
+          # Configuration des permissions d'écriture
+          # chmod 755: Lecture/Écriture/Exécution pour propriétaire
+          #            Lecture/Exécution pour groupe et autres
+          # Nécessaire pour que Laravel puisse écrire les logs et le cache
+          # ----------------------------------------------------------------
           chmod -R 755 storage bootstrap/cache
+          
+          # ----------------------------------------------------------------
+          # Mise en cache de la configuration Laravel
+          # Combine tous les fichiers config/ en un seul fichier optimisé
+          # Améliore significativement les performances en production
+          # ----------------------------------------------------------------
           php artisan config:cache
+          
+          # ----------------------------------------------------------------
+          # Mise en cache des routes
+          # Compile toutes les routes en un seul fichier
+          # Réduit le temps de réponse des requêtes HTTP
+          # ----------------------------------------------------------------
           php artisan route:cache
+          
+          # ----------------------------------------------------------------
+          # Mise en cache des vues Blade
+          # Pré-compile tous les templates Blade
+          # Optimise le rendu des pages
+          # ----------------------------------------------------------------
           php artisan view:cache
+          
+          # Message de confirmation
+          echo "✅ Configuration Laravel terminée avec succès!"
+    
+    # ------------------------------------------------------------------------
+    # Notification de succès du déploiement
+    # ------------------------------------------------------------------------
+    - name: ✅ Déploiement terminé avec succès
+      run: |
+        echo "🎉 Backend déployé avec succès sur https://schoolproject.fr/api"
+        echo "📊 Statistiques du déploiement:"
+        echo "  - Plateforme: Hostinger"
+        echo "  - API URL: https://schoolproject.fr/api"
+        echo "  - Date: $(date)"
