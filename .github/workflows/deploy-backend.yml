@@ -64,18 +64,13 @@ jobs:
     # Permet de transférer le code et les dépendances entre jobs
     # Conservé pendant 1 jour (suffisant pour le déploiement)
     # ------------------------------------------------------------------------
-    - name: 📤 Sauvegarde de l'artefact de build
-      uses: actions/upload-artifact@v3
+    - name: 📦 Sauvegarde de l'artefact de build
+      uses: actions/upload-artifact@v4
       with:
         name: backend-build    # Nom de l'artefact
-        path: |                # Fichiers à sauvegarder
-          .
-          !.git                # Exclut le dossier .git
-          !.github             # Exclut le dossier .github
-          !node_modules        # Exclut node_modules (si présent)
-          !tests               # Exclut les tests
-          !.env                # Exclut .env (sécurité)
-        retention-days: 1      # Durée de conservation (1 jour)
+        path: .
+        retention-days: 1
+
 
   # ==========================================================================
   # ÉTAPE 2: DEPLOY - Déploiement sur le serveur Hostinger
@@ -92,7 +87,7 @@ jobs:
     # Récupération de l'artefact créé lors de l'étape de build
     # ------------------------------------------------------------------------
     - name: 📥 Téléchargement de l'artefact de build
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: backend-build    # Nom de l'artefact à télécharger
     
